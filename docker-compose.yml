@@ -1,0 +1,134 @@
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: hospital_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hospital_db}
+      MYSQL_USER: ${MYSQL_USER:-hospital_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hospital_pass}
+    ports:
+      - "13307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - hospital_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Database Initialization Service
+  db_init:
+    build: 
+      context: ./backend
+      dockerfile: dockerfile
+    container_name: hospital_db_init
+    environment:
+      - RUNNING_IN_DOCKER=true
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-hospital_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hospital_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hospital_db}
+    volumes:
+      - ./backend:/app
+    networks:
+      - hospital_network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["/app/database/docker_init.sh"]
+    restart: "no"  # Run once and exit
+
+  # Backend API
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: dockerfile
+    container_name: hospital_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-hospital_user}:${MYSQL_PASSWORD:-hospital_pass}@mysql:3306/${MYSQL_DATABASE:-hospital_db}
+      - RUNNING_IN_DOCKER=true
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-hospital_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hospital_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hospital_db}
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    networks:
+      - hospital_network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hospital_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost}
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=production
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - hospital_network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy (HTTP-only for VPS IP access)
+  nginx:
+    image: nginx:alpine
+    container_name: hospital_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - hospital_network
+    depends_on:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  hospital_network:
+    driver: bridge
