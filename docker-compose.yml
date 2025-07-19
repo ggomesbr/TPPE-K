@@ -104,24 +104,24 @@ services:
       retries: 3
 
   # Nginx Reverse Proxy (HTTP-only for VPS IP access)
-  nginx:
-    image: nginx:alpine
-    container_name: hospital_nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-    networks:
-      - hospital_network
-    depends_on:
-      - backend
-      - frontend
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: hospital_nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  #   networks:
+  #     - hospital_network
+  #   depends_on:
+  #     - backend
+  #     - frontend
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
 
 volumes:
   mysql_data:
